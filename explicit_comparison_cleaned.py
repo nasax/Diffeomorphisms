@@ -221,28 +221,6 @@ def explicitEvol( I0, I1, gradI1, phi, v, T, alpha, iters,lamb):
 
     return phi_k, v_k, T
 
-
-def nesterov( I0, I1, gradI1, y, x, lambda_k, alpha, iters ):
-
-    dt = 0.2 / sqrt(2 * alpha)
-    dt = 0.15 / alpha
-
-    x_k = np.copy(x)
-    y_k = np.copy(y)
-
-    for i in range(iters):
-        e_grad = energy_grad( I0, I1, gradI1, x_k, alpha)
-        y_kp1 = x_k + dt * e_grad
-        lambda_kp1 = ( 1 + sqrt( 1 + 4*lambda_k*lambda_k ) )/2
-        gamma_k = (1-lambda_k)/lambda_kp1
-        x_kp1 = (1-gamma_k) * y_kp1 + gamma_k * y_k
-
-        y_k = y_kp1
-        x_k = x_kp1
-        lambda_k = lambda_kp1
-
-    return y_k, x_k, lambda_k 
-
 '''
 Start of File Loading Methods 
 '''
