@@ -53,23 +53,6 @@ def dataEvolution( I0, I1, gradI1, phi ):
 
     return devol
 
-
-def shiftPhiPeriodic(phi):
-    dims = phi.shape
-
-    phi_px = np.vstack((phi[1:, :, :], np.expand_dims(phi[0, :, :], axis=0)))
-    phi_px[-1, :, 0] += dims[0]
-    phi_mx = np.vstack((np.expand_dims(phi[-1, :, :], axis=0), phi[0:-1, :, :]))
-    phi_mx[0, :, 0] -= dims[0]
-
-    phi_py = np.hstack((phi[:, 1:, :], np.expand_dims(phi[:, 0, :], axis=1)))
-    phi_py[:, -1, 1] += dims[1]
-    phi_my = np.hstack((np.expand_dims(phi[:, -1, :], axis=1), phi[:, 0:-1, :]))
-    phi_my[:, 0, 1] -= dims[1]
-
-    return phi_px, phi_mx, phi_py, phi_my
-
-
 def shiftPhi(phi):
     dims = phi.shape
 
@@ -213,72 +196,10 @@ def linearizedOpticalFlow(I0, I1, gradI1, phi, v, alpha, iters):
 
     return phi_k, v_k
 
-
-def computeStepSize( I0, I1, phi ):
-
-    if robust_func == "h&s":
-        dt = 0.99 / sqrt(0.75 + 4 * alpha)
-    else:
-        I1w = interp( I1, phi )
-        It = I1w - I0
-        if robust_func == "lorentzian":
-            sigma = 1.5 / 255
-            rho_p = It / ( sigma**2 + 0.5*It**2)
-            rho_pp = (sigma**2-It**2/2) / ( (sigma**2 + It**2/2)**2 )
-        else:
-            eps = 0.001 / 255
-            rho_p = It / np.sqrt(It**2 + eps**2)
-            rho_pp = eps**2 / ( (It**2 + eps**2)**(3/2) )
-        max_rho_p = np.fabs( rho_p ).max()
-        max_rho_pp = np.fabs( rho_pp ).max()
-        dt = 0.99 / sqrt( 0.25*max_rho_pp + 8*alpha )
-
-    return dt
-
-
-def computeStepSize2(alpha):
-    
-    if robust_func == "h&s":
-        dt = 2 / sqrt( 0.25*2 + 8*alpha )
-    elif robust_func == "lorentzian":
-        sigma = 1.5 / 255
-        dt = 2 / sqrt( 0.25*(0.5/(sigma**2)-1) + 8*alpha )    
-    else:
-        eps = 0.001 / 255
-        dt = 2 / sqrt( 0.25*( 1/eps ) + 8*alpha )
-
-    return dt*0.8
-
-def computeStepSize3(alpha):  
-    if robust_func == "h&s":
-        dt = 2 / sqrt(1 + 8*alpha )
-    return dt*0.8
-
 def computeStepSize4(alpha):  
     if robust_func == "h&s":
         dt = 2 / sqrt(1/alpha )
     return dt*0.8
-
-
-def explicitEvol2nd(I0, I1, gradI1, phi, v, T, alpha, iters,lamb):
-    dt = computeStepSize3(alpha)
-
-    phi_k = np.copy(phi)
-    v_k = np.copy(v)
-    for i in range(iters):
-#        dt = computeStepSize( I0, I1, phi )
-
-        T += dt
-        phi_kp1 = phi_k + dt * v_k
-        e_grad = energy_grad(I0, I1, gradI1, phi_kp1, alpha)
-#        v_kp1 = v_k + dt * (-3/T * v_k + e_grad)
-#        v_kp1 = (v_k + dt * e_grad)/(1+3*dt/T)
-        #v_kp1 = (v_k + dt * (-3 / (2*T) * v_k + e_grad)) /(1+dt*3/(2*T))
-        v_kp1 = (v_k + dt * (-lamb * v_k + e_grad)) /(1+dt*lamb)
-        phi_k = phi_kp1
-        v_k = v_kp1
-
-    return phi_k, v_k, T
 
 def explicitEvol( I0, I1, gradI1, phi, v, T, alpha, iters,lamb):
 
@@ -300,66 +221,6 @@ def explicitEvol( I0, I1, gradI1, phi, v, T, alpha, iters,lamb):
         v_k = v_kp1
 
     return phi_k, v_k, T
-
-
-def RK4( I0, I1, gradI1, phi, v, T, alpha, iters ):
-
-    dt = 1.4/sqrt(2*alpha)
-
-    v_k = np.copy(v)
-    phi_k = np.copy(phi)
-
-    s = [1,2,2,1]
-
-    for i in range(iters):
-        v_kp1 = np.copy(v_k)
-        phi_kp1 = np.copy( phi_k )
-
-        a_v = np.zeros ( v.shape )
-        a_phi = np.zeros( phi.shape )
-
-        T += dt
-
-        for j in range(len(s)):
-            v_step = v_k + a_v / s[j]
-            phi_step = phi_k + a_phi / s[j]
-            t_step = T + ( dt / s[j] if j==0 else 0 )
-
-            e_grad = energy_grad( I0, I1, gradI1, phi_step, alpha )
-            a_v = dt * ( ( -3 / t_step ) * v_step + e_grad )
-            a_phi = dt * v_step
-
-            v_kp1 += a_v * s[j] / 6.0
-            phi_kp1 += a_phi * s[j] / 6.0
-
-        phi_k = phi_kp1
-        v_k = v_kp1
-
-    return phi_k, v_k, T
-
-
-def RK45( I0, I1, gradI1, phi, v, T, alpha, iters ):
-
-    dt = 1.4 / sqrt(2 * alpha)
-    dt = 0.99 / sqrt(0.75 + 4 * alpha)
-    dims = phi.shape
-    n = phi.size
-    y0 = np.hstack( ( phi.flatten(), v.flatten() ) )
-
-    def f(t, y):
-
-        y_phi = y[0:n].reshape( dims )
-        y_v = y[n:].reshape( dims )
-
-        y_v_der = -3 / (t + dt) * y_v + energy_grad(I0, I1, gradI1, y_phi, alpha)
-
-        return np.hstack( (y_v.flatten(), y_v_der.flatten()) )
-
-    ode_out = integrate.solve_ivp( f, [T,T+dt*iters], y0, t_eval=[T+dt*iters], method='RK45', vectorized=True, rtol=0.001, atol=1e-6 )
-    y = ode_out.y
-    T += dt*iters
-
-    return y[0:n].reshape( dims ), y[n:].reshape( dims ), T
 
 
 def nesterov( I0, I1, gradI1, y, x, lambda_k, alpha, iters ):
